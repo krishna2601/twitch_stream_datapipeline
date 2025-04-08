@@ -1,5 +1,6 @@
 import apache_beam as beam
-from apache_beam.io.gcp.pubsub import  ReadFromPubSub
+# from apache_beam.io.gcp.pubsub import  ReadFromPubSub
+from apache_beam.io.kafka import ReadFromKafka
 from apache_beam.io.gcp.bigquery import WriteToBigQuery
 from apache_beam.options.pipeline_options import PipelineOptions
 import json
@@ -8,9 +9,13 @@ import time
 
 #google-cloud configuration===START=======================================
 project_id = os.environ.get("google_cloud_project_id")
-subscription = "twitch_streams_data-sub"
-topic = f'projects/{project_id}/subscriptions/{subscription}'
+kafka_broker = "34.105.66.112:9092"  # Replace with your Kafka broker address
+kafka_topic = "twitch_streams_data"  # Kafka topic from which to consume data
+# subscription = "twitch_streams_data-sub"
+# topic = f'projects/{project_id}/subscriptions/{subscription}'
 #google-cloud configuration===START=======================================
+
+
 
 def run():
     #Define dataflow pipeline options
@@ -21,6 +26,9 @@ def run():
         temp_location = "gs://temp-data-0405/",
         staging_location = "gs://staging-bucket-0405/",
         streaming = True,
+        num_workers=1,  # Reduce to 1 worker if more are not necessary
+        max_num_workers=2,
+        disk_size_gb=50,  # Increase disk size if necessary
         #Dataflow optional parameters
         # job_name = "streaming-twitch-data",
         # num_workers = 3,
@@ -34,8 +42,17 @@ def run():
     #Define beam pipeline
     with beam.Pipeline(options=options) as pipeline:
         #Read input data from Pub/Sub:
-        print(topic)
-        messages = pipeline | ReadFromPubSub(subscription=topic)
+        print(kafka_topic)
+        # messages = pipeline | ReadFromPubSub(subscription=topic)
+        # Read input data from Kafka topic
+        messages = pipeline | 'ReadFromKafka' >> ReadFromKafka(
+            consumer_config={
+                'bootstrap.servers': kafka_broker,
+                'group.id': 'twitch-stream-consumer-group',  # Kafka Consumer Group ID
+                'auto.offset.reset': 'earliest'  # Start reading from the earliest message in the topic
+            },
+            topics=[kafka_topic]
+        )
         print(messages)
         #parse json messages
         parsed_messages = messages | beam.Map(lambda msg: json.loads(msg))

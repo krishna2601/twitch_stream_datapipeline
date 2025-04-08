@@ -1,13 +1,26 @@
-from google.cloud import pubsub_v1
+# from google.cloud import pubsub_v1
 from google.cloud import secretmanager
 import os
 import json
 import time
 import requests
+from kafka import KafkaProducer
 
 #Publisher object
-publisher = pubsub_v1.PublisherClient()
-
+# publisher = pubsub_v1.PublisherClient()
+kafka_broker ='34.105.66.112:9092'
+kafka_topic= 'twitch_streams_data'
+# Adding timeout and retries to the producer
+producer = KafkaProducer(
+    bootstrap_servers=[kafka_broker],
+    acks='all',  # Ensure message is acknowledged by all brokers (can be 'all', 1, or 0)
+    retries=5,   # Number of retries on failure
+    request_timeout_ms=30000,  # Request timeout (30 seconds)
+    reconnect_backoff_ms=1000,  # Delay between reconnect attempts (1 second)
+    metadata_max_age_ms=300000,  # Metadata refresh timeout (5 minutes)
+    max_in_flight_requests_per_connection=5  # Number of requests allowed in flight
+)
+# producer = KafkaProducer(bootstrap_servers=[kafka_broker])
 
 #google-cloud configuration===START=======================================
 project_id = os.environ.get("google_cloud_project_id")
@@ -108,17 +121,19 @@ def get_and_produce_live_streamers(access_token, client_id, url, topic):
                             data['language'] = stream['language']
                             data['started_at'] = stream['started_at']
                             #===============================================================
-
+                            print(data)
                             #publish data to topic============================================
-                            future = publisher.publish(topic=topic, data=json.dumps(data).encode('utf-8'))
-                            future.result()
+                            # future = publisher.publish(topic=topic, data=json.dumps(data).encode('utf-8'))
+                            # future.result()
+                            producer.send(kafka_topic, value=json.dumps(data).encode('utf-8'))
                             # ================================================================
                             #sleep for 1 second before publishing next messages
                             # time.sleep(1)
 
                         else:
                             continue #if id is already published to topic then skip publishing it and continue to next stream
-                        print(f"successfully published data : {data} to {topic}")
+                        # print(f"successfully published data : {data} to {topic}")
+                        print(f"successfully published data : {data} to {kafka_topic}")
 
                 # forward pagination - to move to next page
                 if 'pagination' in streams and 'cursor' in streams['pagination']:
@@ -128,7 +143,7 @@ def get_and_produce_live_streamers(access_token, client_id, url, topic):
 
                 main_count += count
                 print(
-                    f"sent total {count} streamers for current stream and total of {main_count} streamers till now to topic {topic}")
+                    f"sent total {count} streamers for current stream and total of {main_count} streamers till now to topic {kafka_topic}")
                 # sleep for 30 seconds before retrieving next page
                 time.sleep(30)
     except Exception as e:
